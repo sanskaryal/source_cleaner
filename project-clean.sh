@@ -18,5 +18,5 @@ fi
 printf 'Deleting .s, .o, and executable files without extensions under %s\n' "$HOME_DIR"
 
 find "$HOME_DIR" -type f \
-    \( -name '*.s' -o -name '*.o' -o \( ! -name '*.*' -perm +111 \) \) \
+    \( -name '*.s' -o -name '*.o' -o \( ! -name '*.*' -exec test -x {} \; \) \) \
     -print -delete
