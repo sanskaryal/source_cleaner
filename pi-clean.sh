@@ -15,42 +15,21 @@ if [[ "$HOME_DIR" == "/" ]]; then
     exit 1
 fi
 
-printf 'Pi Home File Cleaner\n'
-printf 'Search location: %s (including subfolders)\n\n' "$HOME_DIR"
-printf 'Choose files to find:\n'
-printf '  1) *.*       Files whose names contain a dot\n'
-printf '  2) *.s       Assembly source files\n'
-printf '  3) *.o *.s   Object and assembly source files\n'
-printf '  4) *.o *.s and executable files with no dot in the name\n'
-printf '  5) Custom filename patterns (space-separated, e.g. *.s *.pdf)\n'
+printf 'Project Cleaner\n'
+printf 'Search location: %s (hidden directories will be skipped)\n\n' "$HOME_DIR"
+printf 'Choose what to clean:\n'
+printf '  1) *.s, *.o, and executable files with no extension\n'
+printf '  2) *.* files and all executable files\n'
 printf '  q) Quit\n'
 printf '\nChoice: '
 IFS= read -r choice || exit 1
 
 case "$choice" in
     1)
-        patterns=('*.*')
+        find_expression=( \( -name '*.s' -o -name '*.o' -o \( ! -name '*.*' -exec test -x {} \; \) \) )
         ;;
     2)
-        patterns=('*.s')
-        ;;
-    3|4)
-        patterns=('*.o' '*.s')
-        ;;
-    5)
-        printf 'Patterns (space-separated): '
-        IFS= read -r pattern_line || exit 1
-        read -r -a patterns <<< "$pattern_line"
-        if ((${#patterns[@]} == 0)); then
-            printf 'No patterns entered; nothing to do.\n'
-            exit 0
-        fi
-        for pattern in "${patterns[@]}"; do
-            if [[ "$pattern" == */* || "$pattern" == '.' || "$pattern" == '..' ]]; then
-                printf 'Error: use filename patterns without directory paths.\n' >&2
-                exit 1
-            fi
-        done
+        find_expression=( \( -name '*.*' -o -exec test -x {} \; \) )
         ;;
     q|Q)
         printf 'Nothing changed.\n'
@@ -68,81 +47,71 @@ matches_file=$(mktemp "${TMPDIR:-/tmp}/pi-clean.XXXXXX") || {
 }
 trap 'rm -f -- "$matches_file"' EXIT
 
-matches=()
-
-add_match() {
-    local candidate=$1
-    local existing
-
-    for existing in "${matches[@]}"; do
-        [[ "$existing" == "$candidate" ]] && return
-    done
-    matches+=("$candidate")
-}
-
-collect_pattern() {
-    local pattern=$1
-    local candidate
-
-    if ! find "$HOME_DIR" -type f -name "$pattern" -print0 > "$matches_file"; then
-        printf 'Error: search failed for pattern %q.\n' "$pattern" >&2
-        return 1
-    fi
-
-    while IFS= read -r -d '' candidate; do
-        add_match "$candidate"
-    done < "$matches_file"
-}
-
-for pattern in "${patterns[@]}"; do
-    collect_pattern "$pattern" || exit 1
-done
-
-if [[ "$choice" == 4 ]]; then
-    if ! find "$HOME_DIR" -type f ! -name '*.*' \
-        -exec sh -c 'test -x "$1"' sh {} \; -print0 > "$matches_file"; then
-        printf 'Error: search for executable files failed.\n' >&2
-        exit 1
-    fi
-
-    while IFS= read -r -d '' candidate; do
-        add_match "$candidate"
-    done < "$matches_file"
-fi
-
-if ((${#matches[@]} == 0)); then
-    printf '\nNo matching files found. Nothing changed.\n'
-    exit 0
-fi
-
-printf '\nFound %d file(s):\n' "${#matches[@]}"
-for candidate in "${matches[@]}"; do
-    printf '  %q\n' "$candidate"
-done
-
-printf '\nOnly these regular files will be removed. Directories and symlinks are not removed.\n'
-printf 'Type DELETE to permanently remove these files, or anything else to cancel: '
-IFS= read -r confirmation || exit 1
-
-if [[ "$confirmation" != 'DELETE' ]]; then
-    printf 'Cancelled. Nothing changed.\n'
-    exit 0
-fi
-
-deleted=0
-failed=0
-for candidate in "${matches[@]}"; do
-    if rm -f -- "$candidate"; then
-        ((deleted += 1))
-    else
-        printf 'Could not remove %q\n' "$candidate" >&2
-        ((failed += 1))
-    fi
-done
-
-printf '\nRemoved %d file(s).' "$deleted"
-if ((failed > 0)); then
-    printf ' Failed to remove %d file(s).\n' "$failed"
+if ! find "$HOME_DIR" -type d -name '.*' -prune -o -type f "${find_expression[@]}" -print0 > "$matches_file"; then
+    printf 'Error: file search failed.\n' >&2
     exit 1
 fi
-printf '\n'
+
+matches=()
+while IFS= read -r -d '' candidate; do
+    matches+=("$candidate")
+done < "$matches_file"
+
+if ((${#matches[@]} == 0)); then
+    printf '\nNo matching files found.\n'
+else
+    printf '\nFound %d file(s):\n' "${#matches[@]}"
+    for candidate in "${matches[@]}"; do
+        printf '  %q\n' "$candidate"
+    done
+
+    printf '\nAre you sure you want to DELETE these %d file(s)? [y/N] ' "${#matches[@]}"
+    IFS= read -r confirmation || confirmation=''
+    case "$confirmation" in
+        y|Y|yes|YES|Yes)
+            deleted=0
+            failed=0
+            for candidate in "${matches[@]}"; do
+                if rm -f -- "$candidate"; then
+                    ((deleted += 1))
+                else
+                    printf 'Could not remove %q\n' "$candidate" >&2
+                    ((failed += 1))
+                fi
+            done
+            printf 'Removed %d file(s).' "$deleted"
+            if ((failed > 0)); then
+                printf ' Failed to remove %d file(s).\n' "$failed"
+            else
+                printf '\n'
+            fi
+            ;;
+        *)
+            printf 'File cleanup cancelled.\n'
+            ;;
+    esac
+fi
+
+TRASH_DIR="$HOME_DIR/.local/share/Trash"
+printf '\nDo you want to clean the Trash too? [y/N] '
+IFS= read -r clean_trash || clean_trash=''
+case "$clean_trash" in
+    y|Y|yes|YES|Yes)
+        if [[ -L "$TRASH_DIR" ]]; then
+            printf 'Error: Trash path is a symbolic link; refusing to clean it.\n' >&2
+            exit 1
+        elif [[ -d "$TRASH_DIR" ]]; then
+            if find "$TRASH_DIR" -mindepth 1 -depth -exec rm -rf -- {} +; then
+                printf 'Trash emptied.\n'
+            else
+                printf 'Error: could not completely empty Trash.\n' >&2
+                exit 1
+            fi
+        else
+            printf 'No standard Linux Trash directory found.\n'
+        fi
+        ;;
+    *)
+        printf 'Trash left untouched.\n'
+        ;;
+esac
