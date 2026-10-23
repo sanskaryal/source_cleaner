@@ -19,6 +19,7 @@ SCRIPT_DIR=$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd) || {
 printf 'Pi Tools\n'
 printf '  1) Clean the Pi home directory\n'
 printf '  2) Install WiringPi\n'
+printf '  3) Test the blinking LED assembly example\n'
 printf '  q) Quit\n'
 printf '\nChoice: '
 IFS= read -r choice || exit 1
@@ -37,6 +38,13 @@ case "$choice" in
             exit 1
         fi
         bash "$SCRIPT_DIR/install-wiringpi.sh"
+        ;;
+    3)
+        if [[ ! -f "$SCRIPT_DIR/test_led.sh" ]]; then
+            printf 'Error: test_led.sh was not found beside this script.\n' >&2
+            exit 1
+        fi
+        bash "$SCRIPT_DIR/test_led.sh"
         ;;
     q|Q)
         printf 'Nothing changed.\n'
