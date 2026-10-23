@@ -15,6 +15,11 @@ HOME_DIR=$(cd -P -- "$HOME" && pwd) || {
     exit 1
 }
 
+SCRIPT_DIR=$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd) || {
+    printf 'Error: could not resolve the script directory.\n' >&2
+    exit 1
+}
+
 case "$HOME_DIR" in
     /home/*)
         ;;
@@ -37,6 +42,10 @@ remove_children() {
 
     for child in "$directory"/*; do
         name=${child##*/}
+        if is_script_directory_or_parent "$child"; then
+            printf 'Preserving script directory: %q\n' "$child"
+            continue
+        fi
         if [[ "$preserve_hidden" == true && "$name" == .* ]]; then
             continue
         fi
@@ -48,9 +57,15 @@ remove_children() {
     return "$failed"
 }
 
+is_script_directory_or_parent() {
+    local candidate=$1
+    [[ "$SCRIPT_DIR" == "$candidate" || "$SCRIPT_DIR" == "$candidate/"* ]]
+}
+
 printf 'Cleaning non-hidden contents of %s without confirmation.\n' "$HOME_DIR"
 printf 'Non-standard visible folders will be removed completely.\n'
 printf 'Hidden items are preserved except contents of non-standard folders and Trash.\n'
+printf 'The directory containing this script and its contents will be preserved.\n'
 
 if [[ -L "$trash_dir" ]]; then
     printf 'Error: Trash path is a symbolic link; refusing to clean it.\n' >&2
@@ -70,6 +85,10 @@ for entry in "$HOME_DIR"/*; do
     name=${entry##*/}
 
     if [[ "$name" == .* ]]; then
+        continue
+    fi
+    if is_script_directory_or_parent "$entry"; then
+        printf 'Preserving script directory: %q\n' "$entry"
         continue
     fi
 
