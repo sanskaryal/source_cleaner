@@ -136,7 +136,7 @@ init:
 @
 @ The pins are now set-up for output. 
 @
-@ Start a for loop to turn the lights on/off 11 times. i goes from 0 to 10. 
+@ Start a for loop to turn the lights on/off 3 times. i goes from 0 to 2.
 @
  
 
@@ -144,7 +144,7 @@ init:
 
         ldr     r4, [r4]
 
-        mov     r5, #10
+        mov     r5, #2
 
 
 @@@@@@@@ Loop start
@@ -282,7 +282,7 @@ forLoop:
         bl      delay
 
 
-@ Do this 11 times.
+@ Do this 3 times.
  
        add     r4, #1
 
@@ -380,5 +380,4 @@ ErrMsg: .asciz "Setup didn't work... Aborting...\n"
 
 
 @end of code and end of file. Leave a blank line after this
-
 
